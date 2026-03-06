@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   }
 
   const client = await clientPromise;
-  const db = client.db("edunest_lms");
+  const db = client.db("eduflex_lms");
 
   await db.collection("courses").insertOne({
     title,

@@ -17,7 +17,7 @@ export default async function StudentCoursePage(props: {
   }
 
   const client = await clientPromise;
-  const db = client.db("edunest_lms");
+  const db = client.db("eduflex_lms");
 
   const course = await db
     .collection("courses")

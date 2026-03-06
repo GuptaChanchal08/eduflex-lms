@@ -1,65 +1,37 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import Progress from "@/models/Progress";
-import Section from "@/models/Section";
-import Lesson from "@/models/Lesson";
-import Enrollment from "@/models/Enrollment";
-import { verifyToken } from "@/lib/auth/jwt";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import clientPromise from "@/lib/db";
 
-/**
- * GET → Fetch course progress & completion status
- */
 export async function GET(
   req: Request,
   { params }: { params: { courseId: string } }
 ) {
   try {
-    // 1️⃣ Authentication
-    const token = req.cookies.get("token")?.value;
-    if (!token)
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
 
-    const user = verifyToken(token);
+    const { courseId } = params;
+    const studentId = session.user.id;
 
-    if (user.role !== "student")
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    const client = await clientPromise;
+    const db = client.db("eduflex_lms");
 
-    await connectDB();
+    const sections = await db.collection("sections").find({ courseId }).toArray();
+    const sectionIds = sections.map((s) => s._id.toString());
 
-    // 2️⃣ Ensure enrollment
-    const enrollment = await Enrollment.findOne({
-      student: user.id,
-      course: params.courseId,
-    });
-
-    if (!enrollment)
-      return NextResponse.json(
-        { message: "Not enrolled in course" },
-        { status: 403 }
-      );
-
-    // 3️⃣ Fetch all lessons in course
-    const sections = await Section.find({ course: params.courseId });
-    const sectionIds = sections.map((s) => s._id);
-
-    const lessons = await Lesson.find({
-      section: { $in: sectionIds },
-    });
+    const lessons = await db
+      .collection("lessons")
+      .find({ sectionId: { $in: sectionIds } })
+      .toArray();
 
     const totalLessons = lessons.length;
 
-    // 4️⃣ Fetch progress
-    const progress = await Progress.findOne({
-      student: user.id,
-      course: params.courseId,
-    });
-
-    const completedLessons = progress?.completedLessons.length || 0;
-
-    const percentage =
-      totalLessons === 0
-        ? 0
-        : Math.round((completedLessons / totalLessons) * 100);
+    const progress = await db.collection("progress").findOne({ studentId, courseId });
+    const completedLessons = progress?.completedLessons?.length || 0;
+    const percentage = totalLessons === 0 ? 0 : Math.round((completedLessons / totalLessons) * 100);
 
     return NextResponse.json({
       success: true,
@@ -69,10 +41,6 @@ export async function GET(
       completed: percentage === 100,
     });
   } catch (error) {
-    console.error("PROGRESS STATUS ERROR:", error);
-    return NextResponse.json(
-      { message: "Failed to fetch progress" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Failed to fetch progress" }, { status: 500 });
   }
 }

@@ -1,75 +1,49 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import Lesson from "@/models/Lesson";
-import Section from "@/models/Section";
-import { verifyToken } from "@/lib/auth/jwt";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import clientPromise from "@/lib/db";
+import { ObjectId } from "mongodb";
 
-/**
- * POST → Create lesson inside a section
- */
 export async function POST(req: Request) {
   try {
-    const token = req.cookies.get("token")?.value;
-    if (!token) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const user = verifyToken(token);
-    if (!["admin", "instructor"].includes(user.role)) {
-      return NextResponse.json(
-        { message: "Forbidden" },
-        { status: 403 }
-      );
+    const role = (session.user as any).role;
+    if (!["admin", "instructor"].includes(role)) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
 
-    const body = JSON.parse(await req.text());
-    const {
+    const { title, sectionId, courseId, contentType, contentUrl, textContent, order } = await req.json();
+
+    if (!title || !sectionId || !contentType || !courseId) {
+      return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
+    }
+
+    const client = await clientPromise;
+    const db = client.db("eduflex_lms");
+
+    const section = await db.collection("sections").findOne({ _id: new ObjectId(sectionId) });
+    if (!section) {
+      return NextResponse.json({ message: "Section not found" }, { status: 404 });
+    }
+
+    const result = await db.collection("lessons").insertOne({
       title,
       sectionId,
+      courseId,
       contentType,
-      contentUrl,
-      textContent,
-      order,
-    } = body;
-
-    if (!title || !sectionId || !contentType) {
-      return NextResponse.json(
-        { message: "Missing required fields" },
-        { status: 400 }
-      );
-    }
-
-    await connectDB();
-
-    const section = await Section.findById(sectionId);
-    if (!section) {
-      return NextResponse.json(
-        { message: "Section not found" },
-        { status: 404 }
-      );
-    }
-
-    const lesson = await Lesson.create({
-      title,
-      section: sectionId,
-      contentType,
-      contentUrl,
-      textContent,
+      contentUrl: contentUrl || "",
+      textContent: textContent || "",
       order: order || 1,
+      createdAt: new Date(),
     });
 
-    return NextResponse.json({
-      success: true,
-      lesson,
-    });
-  } catch (error: any) {
-    console.error("LESSON ERROR 👉", error);
-    return NextResponse.json(
-      { message: "Failed to create lesson" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, lessonId: result.insertedId });
+  } catch (error) {
+    console.error("LESSON ERROR:", error);
+    return NextResponse.json({ message: "Failed to create lesson" }, { status: 500 });
   }
 }

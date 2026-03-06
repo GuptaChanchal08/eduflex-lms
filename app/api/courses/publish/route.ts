@@ -1,55 +1,33 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import Course from "@/models/Course";
-import { verifyToken } from "@/lib/auth/jwt";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import clientPromise from "@/lib/db";
+import { ObjectId } from "mongodb";
 
-/**
- * POST → Admin publishes a course
- */
 export async function POST(req: Request) {
   try {
-    // Extract token
-    const token = req.headers
-      .get("cookie")
-      ?.split("token=")[1]
-      ?.split(";")[0];
-
-    if (!token) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const decoded: any = verifyToken(token);
-
-    // Only admin allowed
-    if (decoded.role !== "admin") {
-      return NextResponse.json(
-        { success: false, message: "Only admin can publish courses" },
-        { status: 403 }
-      );
+    const role = (session.user as any).role;
+    if (!["admin", "instructor"].includes(role)) {
+      return NextResponse.json({ message: "Only admin or instructor can publish courses" }, { status: 403 });
     }
 
-    const { courseId } = await req.json();
+    const { courseId, status } = await req.json();
 
-    await connectDB();
+    const client = await clientPromise;
+    const db = client.db("eduflex_lms");
 
-    const course = await Course.findByIdAndUpdate(
-      courseId,
-      { status: "published" },
-      { new: true }
+    await db.collection("courses").updateOne(
+      { _id: new ObjectId(courseId) },
+      { $set: { status: status || "published", updatedAt: new Date() } }
     );
 
-    return NextResponse.json({
-      success: true,
-      message: "Course published successfully",
-      course,
-    });
+    return NextResponse.json({ success: true, message: `Course ${status || "published"} successfully` });
   } catch (error) {
-    return NextResponse.json(
-      { success: false, message: "Course publish failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Course publish failed" }, { status: 500 });
   }
 }

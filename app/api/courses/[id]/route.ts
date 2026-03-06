@@ -10,7 +10,7 @@ export async function GET(
     const { id } = await context.params;
 
     const client = await clientPromise;
-    const db = client.db("edunest_lms");
+    const db = client.db("eduflex_lms");
 
     const course = await db
       .collection("courses")

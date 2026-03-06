@@ -18,7 +18,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const client = await clientPromise;
-        const db = client.db("edunest_lms");
+        const db = client.db("eduflex_lms");
 
         const user = await db.collection("users").findOne({
           email: credentials.email,
@@ -35,7 +35,7 @@ export const authOptions: NextAuthOptions = {
 
         return {
           id: user._id.toString(),
-          name: user.name,
+          name: `${user.firstName} ${user.lastName}`.trim() || user.name || user.email,
           email: user.email,
           role: user.role || "student",
         };

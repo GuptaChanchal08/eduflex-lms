@@ -66,7 +66,7 @@ function generateCourses() {
 export async function POST() {
   try {
     const client = await clientPromise;
-    const db = client.db("edunest_lms");
+    const db = client.db("eduflex_lms");
 
     const courses = generateCourses();
 
